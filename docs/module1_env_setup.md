@@ -33,8 +33,8 @@ rosversion -d
 > 우분투 20.04의 기본 파이썬 버전은 3.8입니다. ROS Noetic 패키지들은 모두 Python 3.8에 맞춰 빌드되어 있으므로, 다른 파이썬 버전(예: 3.10)을 강제로 설치하면 ROS 실행 시 심각한 충돌이 발생할 수 있습니다. 기본 버전을 유지하는 것을 강력히 권장합니다.
 
 ```bash
-# 1. 파이썬 기본 명령어 연결 및 추가 라이브러리 설치 (zbar 포함)
-sudo apt install python-is-python3 python3-pip python3-opencv libzbar0 -y
+# 1. 파이썬 기본 명령어 연결 (python 명령어 입력 시 python3가 실행되도록 편의성 설정)
+sudo apt install python-is-python3 python3-pip python3-opencv -y
 
 # 2. 빌드 도구 및 rosdep 설치
 sudo apt install python3-rosdep python3-rosinstall python3-rosinstall-generator python3-wstool build-essential python3-osrf-pycommon -y
@@ -121,7 +121,7 @@ qr_logistics_robot/
 ### 4.1 기본 런치 파일 생성
 ```bash
 # launch 폴더 안에 empty_world.launch 파일 생성
-nano ~/catkin_ws/src/qr_logistics_robot/launch/empty_world.launch
+vim ~/catkin_ws/src/qr_logistics_robot/launch/empty_world.launch
 ```
 아래의 내용을 복사하여 넣고 저장(Ctrl+O, Enter, Ctrl+X)합니다.
 ```xml
