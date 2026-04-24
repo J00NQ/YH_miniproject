@@ -1,0 +1,15 @@
+material QRBox/Image
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+      texture_unit
+      {
+        texture logistics_qr_1.png
+        scale 1.0 1.0
+      }
+    }
+  }
+}
