@@ -48,9 +48,11 @@ class PathPlannerNode:
                 goal.target_pose.header.frame_id = "map"
                 goal.target_pose.header.stamp = rospy.Time.now()
                 
-                goal.target_pose.pose.position.x = float(coords[0])
+                # [중요] 목적지 좌표(3.0, 3.0)에는 물리적인 상자(장애물)가 존재합니다.
+                # 로봇이 상자 안으로 파고들 수 없으므로, 상자 바로 앞(X좌표 -1.0 지점)에 정차하도록 오프셋을 적용합니다.
+                goal.target_pose.pose.position.x = float(coords[0]) - 1.0
                 goal.target_pose.pose.position.y = float(coords[1])
-                # 로봇이 도착했을 때 바라볼 방향(정면) 임시 설정
+                # 로봇이 도착했을 때 상자를 정면으로 바라보도록 방향 설정
                 goal.target_pose.pose.orientation.w = 1.0
                 
                 # 4. Action Server로 Goal 전송 (서버가 연결된 경우에만)
