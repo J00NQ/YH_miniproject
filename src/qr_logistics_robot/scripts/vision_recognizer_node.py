@@ -35,6 +35,9 @@ class VisionRecognizerNode:
         self.path_distance = 0.0
         self.camera_matrix = None
         self.dist_coeffs = None
+        self.clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        self.frame_count = 0
+        self.last_decoded = []
 
         # 4. 카메라 내부 파라미터 수신 (캘리브레이션)
         rospy.Subscriber('/camera/rgb/camera_info', CameraInfo, self.camera_info_callback)
@@ -74,8 +77,7 @@ class VisionRecognizerNode:
         blurred = cv2.GaussianBlur(gray, (5, 5), 0)
         
         # 3. CLAHE (대비 제한 적응형 히스토그램 평활화) - 역광/그림자 환경 대비
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-        enhanced = clahe.apply(blurred)
+        enhanced = self.clahe.apply(blurred)
         
         return enhanced
 
@@ -96,29 +98,29 @@ class VisionRecognizerNode:
         if self.camera_matrix is not None:
             cv_image = cv2.undistort(cv_image, self.camera_matrix, self.dist_coeffs)
 
-        # 디코딩을 위한 전처리 수행
-        preprocessed_img = self.preprocess_image(cv_image)
-        
-        # 프레임 이미지에서 QR 코드 디코딩 시도 (전처리된 흑백 이미지 사용)
-        decoded_objects = decode(preprocessed_img)
-        
-        if decoded_objects:
-            for obj in decoded_objects:
+        # 프레임 스킵: 3프레임마다 1회만 전처리·디코딩 수행 (FPS 최적화)
+        self.frame_count += 1
+        if self.frame_count % 3 == 0:
+            preprocessed_img = self.preprocess_image(cv_image)
+            self.last_decoded = decode(preprocessed_img)
+
+        if self.last_decoded:
+            for obj in self.last_decoded:
                 # 1. QR 데이터 디코딩
                 qr_data = obj.data.decode('utf-8')
-                
+
                 # 2. 바운딩 박스 그리기 (실시간 시각화)
                 points = obj.polygon
                 if len(points) == 4:
                     pts = np.array(points, dtype=np.int32)
                     pts = pts.reshape((-1, 1, 2))
                     cv2.polylines(cv_image, [pts], True, (0, 255, 0), 3)
-                    
+
                     # 중심점 계산 및 표시
                     cx = int(np.mean([p.x for p in points]))
                     cy = int(np.mean([p.y for p in points]))
                     cv2.circle(cv_image, (cx, cy), 5, (0, 0, 255), -1)
-                
+
                 # 3. 데이터 파싱 및 퍼블리시
                 if qr_data != self.last_published_data:
                     try:
@@ -127,13 +129,13 @@ class VisionRecognizerNode:
                         rospy.loginfo(f"=====================================================")
                         rospy.loginfo(f"[새로운 QR 감지!] 목적지: {dest} / 주행 시작 대기 중...")
                         rospy.loginfo(f"=====================================================")
-                        
+
                         # 파싱된 데이터 문자열을 ROS Topic으로 발행
                         self.pub.publish(qr_data)
-                        
+
                         # 중복 방지를 위해 최근 데이터 갱신
                         self.last_published_data = qr_data
-                        
+
                     except json.JSONDecodeError:
                         rospy.logwarn("인식된 데이터가 유효한 JSON 포맷이 아닙니다.")
 
@@ -142,7 +144,7 @@ class VisionRecognizerNode:
                     display_text = json.loads(qr_data).get('destination', 'QR')
                 except:
                     display_text = "QR Code"
-                
+
                 cv2.putText(cv_image, f"Dest: {display_text}", (points[0].x, points[0].y - 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
