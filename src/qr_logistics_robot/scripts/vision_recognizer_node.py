@@ -22,7 +22,8 @@ class VisionRecognizerNode:
         self.bridge = CvBridge()
         
         # 2. 파싱된 목적지 데이터를 발행할 퍼블리셔
-        self.pub = rospy.Publisher('/target_logistics_info', String, queue_size=10)
+        # latch=True: 늦게 연결된 구독자에게도 마지막 메시지를 즉시 전달 (노드 시작 순서 무관)
+        self.pub = rospy.Publisher('/target_logistics_info', String, queue_size=10, latch=True)
         
         # 3. 로봇 카메라 토픽을 구독하는 서브스크라이버 (프레임이 들어올 때마다 image_callback 실행)
         self.sub = rospy.Subscriber('/camera/rgb/image_raw', Image, self.image_callback)
@@ -38,6 +39,9 @@ class VisionRecognizerNode:
         self.clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         self.frame_count = 0
         self.last_decoded = []
+        self.roi_offset = (0, 0)   # ROI 크롭 오프셋 (바운딩 박스 좌표 역변환용)
+        self.decode_scale = 1      # 업스케일 배율 (바운딩 박스 좌표 역변환용)
+        self.qr_detector = cv2.QRCodeDetector()  # pyzbar 실패 시 fallback
 
         # 4. 카메라 내부 파라미터 수신 (캘리브레이션)
         rospy.Subscriber('/camera/rgb/camera_info', CameraInfo, self.camera_info_callback)
@@ -68,23 +72,43 @@ class VisionRecognizerNode:
             
         self.path_distance = distance
 
-    def preprocess_image(self, cv_image):
-        """조명 및 잡음 환경에 대비한 전처리 (2회차 중급: 기능 안정화)"""
-        # 1. 그레이스케일 변환 (인식 속도 및 정확도 향상)
-        gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
-        
-        # 2. Gaussian Blur (센서 노이즈 제거)
-        # [수정] 가제보 시뮬레이션 환경에서는 노이즈가 적고, 1/4로 축소된 QR 코드에 Blur를 
-        # (5, 5)로 강하게 먹이면 픽셀이 뭉개져 PyZbar가 인식하지 못하므로 블러 처리를 해제합니다.
-        # blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-        
-        # 3. CLAHE (대비 제한 적응형 히스토그램 평활화) - 역광/그림자 환경 대비
+    def detect_qr(self, cv_image):
+        """중앙 ROI 크롭 + 멀티스케일 업스케일로 소형 QR 인식.
+        반환: (decoded_list, roi_offset(x,y), scale)
+        """
+        h, w = cv_image.shape[:2]
+
+        # 화면 중앙 60% 영역 크롭 (로봇 정면 QR이 항상 중앙에 위치)
+        x1, y1 = int(w * 0.2), int(h * 0.2)
+        x2, y2 = int(w * 0.8), int(h * 0.8)
+        roi = cv_image[y1:y2, x1:x2]
+
+        # 전처리: 그레이스케일 → CLAHE → Otsu 이진화
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
         enhanced = self.clahe.apply(gray)
-        
-        # 추가 대비 강화 (이진화 방식 적용 시 인식률 크게 향상 가능)
-        # _, thresh = cv2.threshold(enhanced, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-        
-        return enhanced
+        _, thresh = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+
+        # pyzbar: ROI 원본(1x) → 2x → 4x 순으로 업스케일 후 디코딩 시도
+        # 업스케일로 QR 모듈당 픽셀 수를 늘려 pyzbar 인식률 향상
+        for scale in [1, 2, 4]:
+            img = cv2.resize(thresh, None, fx=scale, fy=scale,
+                             interpolation=cv2.INTER_CUBIC) if scale > 1 else thresh
+            results = decode(img)
+            if results:
+                return results, (x1, y1), scale
+
+        # cv2.QRCodeDetector fallback: pyzbar 전부 실패 시 시도
+        ok, texts, pts_list, _ = self.qr_detector.detectAndDecodeMulti(roi)
+        if ok and any(texts):
+            class _QR:
+                def __init__(self, text, pts):
+                    self.data = text.encode('utf-8')
+                    # polygon을 pyzbar namedtuple 형식과 호환되도록 변환
+                    self.polygon = [type('P', (), {'x': int(p[0]), 'y': int(p[1])})()
+                                    for p in pts] if pts is not None else []
+            return [_QR(t, p) for t, p in zip(texts, pts_list) if t], (x1, y1), 1
+
+        return [], (x1, y1), 1
 
     def image_callback(self, data):
         # FPS 측정 (현재 시간)
@@ -103,27 +127,28 @@ class VisionRecognizerNode:
         if self.camera_matrix is not None:
             cv_image = cv2.undistort(cv_image, self.camera_matrix, self.dist_coeffs)
 
-        # 프레임 스킵: 3프레임마다 1회만 전처리·디코딩 수행 (FPS 최적화)
+        # 프레임 스킵: 3프레임마다 1회만 디코딩 수행 (FPS 최적화)
         self.frame_count += 1
         if self.frame_count % 3 == 0:
-            preprocessed_img = self.preprocess_image(cv_image)
-            self.last_decoded = decode(preprocessed_img)
+            self.last_decoded, self.roi_offset, self.decode_scale = self.detect_qr(cv_image)
 
         if self.last_decoded:
             for obj in self.last_decoded:
                 # 1. QR 데이터 디코딩
                 qr_data = obj.data.decode('utf-8')
 
-                # 2. 바운딩 박스 그리기 (실시간 시각화)
+                # 2. 바운딩 박스 그리기: ROI+스케일 좌표 → 전체 이미지 좌표 역변환
                 points = obj.polygon
+                ox, oy = self.roi_offset
+                s = self.decode_scale
                 if len(points) == 4:
-                    pts = np.array(points, dtype=np.int32)
-                    pts = pts.reshape((-1, 1, 2))
-                    cv2.polylines(cv_image, [pts], True, (0, 255, 0), 3)
-
-                    # 중심점 계산 및 표시
-                    cx = int(np.mean([p.x for p in points]))
-                    cy = int(np.mean([p.y for p in points]))
+                    full_pts = np.array(
+                        [[int(p.x / s) + ox, int(p.y / s) + oy] for p in points],
+                        dtype=np.int32
+                    )
+                    cv2.polylines(cv_image, [full_pts.reshape((-1, 1, 2))], True, (0, 255, 0), 3)
+                    cx = int(np.mean(full_pts[:, 0]))
+                    cy = int(np.mean(full_pts[:, 1]))
                     cv2.circle(cv_image, (cx, cy), 5, (0, 0, 255), -1)
 
                 # 3. 데이터 파싱 및 퍼블리시
@@ -134,8 +159,9 @@ class VisionRecognizerNode:
                         task_id = logistics_info.get('id', 'Unknown')
 
                         if qr_type == 'START':
+                            dest_name = logistics_info.get('name', '목적지')
                             rospy.loginfo(f"=====================================================")
-                            rospy.loginfo(f"[배송 시작 QR 감지!] 임무 ID: {task_id} / 주행 시작 대기 중...")
+                            rospy.loginfo(f"[배송 시작 QR 감지!] 임무 ID: {task_id} / 임무: {dest_name}(으)로 이동")
                             rospy.loginfo(f"=====================================================")
                         elif qr_type == 'ARR':
                             rospy.loginfo(f"=====================================================")
@@ -168,20 +194,29 @@ class VisionRecognizerNode:
                 except:
                     display_text = "QR Code"
 
-                cv2.putText(cv_image, f"Dest: {display_text}", (points[0].x, points[0].y - 10),
+                text_x = int(points[0].x / s) + ox
+                text_y = max(int(points[0].y / s) + oy - 10, 10)
+                cv2.putText(cv_image, f"Dest: {display_text}", (text_x, text_y),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
+        # ROI 영역 표시 (주황색 박스 - QR 탐색 범위 시각화)
+        h_img, w_img = cv_image.shape[:2]
+        roi_x1, roi_y1 = int(w_img * 0.2), int(h_img * 0.2)
+        roi_x2, roi_y2 = int(w_img * 0.8), int(h_img * 0.8)
+        cv2.rectangle(cv_image, (roi_x1, roi_y1), (roi_x2, roi_y2), (0, 165, 255), 2)
+        cv2.putText(cv_image, "ROI", (roi_x1 + 4, roi_y1 + 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
+
         # FPS 및 거리 화면 좌측 상단 텍스트 출력
-        cv2.putText(cv_image, f"FPS: {fps:.1f}", (20, 30), 
+        cv2.putText(cv_image, f"FPS: {fps:.1f}", (20, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
-        
+
         dist_text = f"Dist to Dest: {self.path_distance:.2f}m" if self.path_distance > 0 else "Dist to Dest: N/A"
-        cv2.putText(cv_image, dist_text, (20, 60), 
+        cv2.putText(cv_image, dist_text, (20, 60),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
 
         # 실시간 시각화 창 띄우기 (OpenCV)
         cv2.imshow("Robot Camera Vision (Processed)", cv_image)
-        # cv2.imshow("Preprocessed (CLAHE)", preprocessed_img) # 디버깅 시 주석 해제하여 흑백 영상 확인
         cv2.waitKey(1)
 
 if __name__ == '__main__':
