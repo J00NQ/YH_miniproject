@@ -16,7 +16,8 @@ qr_data_list = [
             "id": "A1",
             "type": "START",
             "name": "책상3",
-            "tgt": [2.5, -1.0]
+            "tgt": [2.5, -1.0],
+            "theta": 0.0
         }
     },
     {

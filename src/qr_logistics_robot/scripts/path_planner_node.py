@@ -4,6 +4,7 @@
 import rospy
 import actionlib
 import json
+import math
 from std_msgs.msg import String
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 
@@ -43,15 +44,18 @@ class PathPlannerNode:
                         return
 
                     dest_name = logistics_info.get('name', f'임무 {task_id}')
-                    rospy.loginfo(f">>> [{dest_name}(으)로 이동] 임무를 시작합니다! (목표 좌표: X={target[0]}, Y={target[1]})")
-                    
+                    theta = float(logistics_info.get('theta', 0.0))
+                    rospy.loginfo(f">>> [{dest_name}(으)로 이동] 임무를 시작합니다! (목표 좌표: X={target[0]}, Y={target[1]}, θ={math.degrees(theta):.1f}°)")
+
                     goal = MoveBaseGoal()
                     goal.target_pose.header.frame_id = "map"
                     goal.target_pose.header.stamp = rospy.Time.now()
-                    
+
                     goal.target_pose.pose.position.x = float(target[0])
                     goal.target_pose.pose.position.y = float(target[1])
-                    goal.target_pose.pose.orientation.w = 1.0
+                    # yaw(theta) → 쿼터니언 변환 (roll=pitch=0 고정)
+                    goal.target_pose.pose.orientation.z = math.sin(theta / 2.0)
+                    goal.target_pose.pose.orientation.w = math.cos(theta / 2.0)
                     
                     if self.client.wait_for_server(rospy.Duration(0.1)):
                         self.client.send_goal(goal)
