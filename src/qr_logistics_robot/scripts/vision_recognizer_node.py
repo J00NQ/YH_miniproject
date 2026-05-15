@@ -74,10 +74,15 @@ class VisionRecognizerNode:
         gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
         
         # 2. Gaussian Blur (센서 노이즈 제거)
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        # [수정] 가제보 시뮬레이션 환경에서는 노이즈가 적고, 1/4로 축소된 QR 코드에 Blur를 
+        # (5, 5)로 강하게 먹이면 픽셀이 뭉개져 PyZbar가 인식하지 못하므로 블러 처리를 해제합니다.
+        # blurred = cv2.GaussianBlur(gray, (5, 5), 0)
         
         # 3. CLAHE (대비 제한 적응형 히스토그램 평활화) - 역광/그림자 환경 대비
-        enhanced = self.clahe.apply(blurred)
+        enhanced = self.clahe.apply(gray)
+        
+        # 추가 대비 강화 (이진화 방식 적용 시 인식률 크게 향상 가능)
+        # _, thresh = cv2.threshold(enhanced, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
         
         return enhanced
 
@@ -125,10 +130,21 @@ class VisionRecognizerNode:
                 if qr_data != self.last_published_data:
                     try:
                         logistics_info = json.loads(qr_data)
-                        dest = logistics_info.get('destination', 'Unknown')
-                        rospy.loginfo(f"=====================================================")
-                        rospy.loginfo(f"[새로운 QR 감지!] 목적지: {dest} / 주행 시작 대기 중...")
-                        rospy.loginfo(f"=====================================================")
+                        qr_type = logistics_info.get('type')
+                        task_id = logistics_info.get('id', 'Unknown')
+
+                        if qr_type == 'START':
+                            rospy.loginfo(f"=====================================================")
+                            rospy.loginfo(f"[배송 시작 QR 감지!] 임무 ID: {task_id} / 주행 시작 대기 중...")
+                            rospy.loginfo(f"=====================================================")
+                        elif qr_type == 'ARR':
+                            rospy.loginfo(f"=====================================================")
+                            rospy.loginfo(f"[도착 확인 QR 감지!] 임무 완료 대기 중...")
+                            rospy.loginfo(f"=====================================================")
+                        else:
+                            rospy.loginfo(f"=====================================================")
+                            rospy.loginfo(f"[새로운 QR 감지!] 임무 ID: {task_id} / 주행 시작 대기 중...")
+                            rospy.loginfo(f"=====================================================")
 
                         # 파싱된 데이터 문자열을 ROS Topic으로 발행
                         self.pub.publish(qr_data)
@@ -141,7 +157,14 @@ class VisionRecognizerNode:
 
                 # QR코드 목적지 텍스트를 Bounding Box 위에 오버레이
                 try:
-                    display_text = json.loads(qr_data).get('destination', 'QR')
+                    info = json.loads(qr_data)
+                    qr_type = info.get('type')
+                    if qr_type == 'START':
+                        display_text = f"START: ID {info.get('id', 'Task')}"
+                    elif qr_type == 'ARR':
+                        display_text = f"ARRIVAL"
+                    else:
+                        display_text = f"ID: {info.get('id', 'QR')}"
                 except:
                     display_text = "QR Code"
 

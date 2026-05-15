@@ -32,41 +32,73 @@ class PathPlannerNode:
     def target_callback(self, data):
         try:
             logistics_info = json.loads(data.data)
-            destination = logistics_info.get('destination')
-            coords = logistics_info.get('target_coordinates')
+            qr_type = logistics_info.get('type')
             
-            # 데이터 구조 방어 로직 (coords가 리스트 형태이고 길이가 2인지 확인)
-            if coords and len(coords) == 2:
-                # 이미 동일한 목적지 명령을 내린 상태라면 무시
-                if self.current_goal_id == destination:
-                    return
+            if qr_type == 'START':
+                task_id = logistics_info.get('id')
+                target = logistics_info.get('tgt')
+                
+                if target and len(target) == 2:
+                    if self.current_goal_id == task_id:
+                        return
+                        
+                    rospy.loginfo(f">>> [임무 ID: {task_id}] 주행 시작! (목표 좌표: X={target[0]}, Y={target[1]})")
                     
-                rospy.loginfo(f">>> [{destination}] 구역으로 주행 명령을 하달합니다! (목표 좌표: X={coords[0]}, Y={coords[1]})")
-                
-                # 3. ROS Navigation Action Server로 보낼 Goal 데이터 포맷팅
-                goal = MoveBaseGoal()
-                goal.target_pose.header.frame_id = "map"
-                goal.target_pose.header.stamp = rospy.Time.now()
-                
-                # [중요] 목적지 좌표(3.0, 3.0)에는 물리적인 상자(장애물)가 존재합니다.
-                # 로봇이 상자 안으로 파고들 수 없으므로, 상자 바로 앞(X좌표 -1.0 지점)에 정차하도록 오프셋을 적용합니다.
-                goal.target_pose.pose.position.x = float(coords[0]) - 1.0
-                goal.target_pose.pose.position.y = float(coords[1])
-                # 로봇이 도착했을 때 상자를 정면으로 바라보도록 방향 설정
-                goal.target_pose.pose.orientation.w = 1.0
-                
-                # 4. Action Server로 Goal 전송 (서버가 연결된 경우에만)
-                if self.client.wait_for_server(rospy.Duration(0.1)):
-                    self.client.send_goal(goal)
-                    rospy.loginfo("--- 주행 목표(Goal) 실제 전송 완료! ---")
+                    goal = MoveBaseGoal()
+                    goal.target_pose.header.frame_id = "map"
+                    goal.target_pose.header.stamp = rospy.Time.now()
+                    
+                    goal.target_pose.pose.position.x = float(target[0])
+                    goal.target_pose.pose.position.y = float(target[1])
+                    goal.target_pose.pose.orientation.w = 1.0
+                    
+                    if self.client.wait_for_server(rospy.Duration(0.1)):
+                        self.client.send_goal(goal)
+                        rospy.loginfo("--- 주행 목표(Goal) 실제 전송 완료! ---")
+                    else:
+                        rospy.loginfo("--- 주행 목표(Goal) 가상 전송 완료! (Navigation 스택 가동 시 로봇이 즉시 출발합니다) ---")
+                    
+                    self.current_goal_id = task_id
                 else:
-                    rospy.loginfo("--- 주행 목표(Goal) 가상 전송 완료! (Navigation 스택 가동 시 로봇이 즉시 출발합니다) ---")
-                
-                # 상태 업데이트
-                self.current_goal_id = destination
+                    rospy.logwarn("START 데이터에 유효한 목표 좌표(tgt) 값이 없습니다.")
+                    
+            elif qr_type == 'ARR':
+                task_id = logistics_info.get('id')
+                if self.current_goal_id == task_id:
+                    rospy.loginfo(f"*** 배송 완료! (Task ID: {task_id}) 목적지 QR 인식을 성공했습니다. 대기 상태로 전환합니다. ***")
+                    self.current_goal_id = None
+                else:
+                    rospy.logwarn(f"도착 QR을 인식했지만, 현재 수행 중인 임무({self.current_goal_id})와 일치하지 않습니다.")
+                    
             else:
-                rospy.logwarn("수신된 물류 데이터에 유효한 좌표(target_coordinates) 값이 없습니다.")
+                # 구버전 호환 로직 (destination, target_coordinates)
+                destination = logistics_info.get('destination')
+                coords = logistics_info.get('target_coordinates')
                 
+                if coords and len(coords) == 2:
+                    if self.current_goal_id == destination:
+                        return
+                        
+                    rospy.loginfo(f">>> [{destination}] 구역으로 주행 명령을 하달합니다! (목표 좌표: X={coords[0]}, Y={coords[1]})")
+                    
+                    goal = MoveBaseGoal()
+                    goal.target_pose.header.frame_id = "map"
+                    goal.target_pose.header.stamp = rospy.Time.now()
+                    
+                    goal.target_pose.pose.position.x = float(coords[0]) - 1.0
+                    goal.target_pose.pose.position.y = float(coords[1])
+                    goal.target_pose.pose.orientation.w = 1.0
+                    
+                    if self.client.wait_for_server(rospy.Duration(0.1)):
+                        self.client.send_goal(goal)
+                        rospy.loginfo("--- 주행 목표(Goal) 실제 전송 완료! ---")
+                    else:
+                        rospy.loginfo("--- 주행 목표(Goal) 가상 전송 완료! ---")
+                    
+                    self.current_goal_id = destination
+                else:
+                    rospy.logwarn("수신된 물류 데이터에 유효한 좌표 값이 없습니다.")
+                    
         except json.JSONDecodeError:
             rospy.logerr("수신된 데이터를 JSON으로 파싱할 수 없습니다.")
 
