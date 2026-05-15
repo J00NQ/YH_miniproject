@@ -98,15 +98,19 @@ class VisionRecognizerNode:
                 return results, (x1, y1), scale
 
         # cv2.QRCodeDetector fallback: pyzbar 전부 실패 시 시도
-        ok, texts, pts_list, _ = self.qr_detector.detectAndDecodeMulti(roi)
-        if ok and any(texts):
+        # detectAndDecode는 OpenCV 4.2(ROS Noetic 기본)에서 사용 가능
+        data, pts, _ = self.qr_detector.detectAndDecode(roi)
+        if data:
+            polygon = []
+            if pts is not None and len(pts) > 0:
+                polygon = [type('P', (), {'x': int(p[0]), 'y': int(p[1])})()
+                           for p in pts[0]]
             class _QR:
-                def __init__(self, text, pts):
-                    self.data = text.encode('utf-8')
-                    # polygon을 pyzbar namedtuple 형식과 호환되도록 변환
-                    self.polygon = [type('P', (), {'x': int(p[0]), 'y': int(p[1])})()
-                                    for p in pts] if pts is not None else []
-            return [_QR(t, p) for t, p in zip(texts, pts_list) if t], (x1, y1), 1
+                pass
+            obj = _QR()
+            obj.data = data.encode('utf-8')
+            obj.polygon = polygon
+            return [obj], (x1, y1), 1
 
         return [], (x1, y1), 1
 
