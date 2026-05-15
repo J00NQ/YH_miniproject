@@ -41,8 +41,9 @@ class PathPlannerNode:
                 if target and len(target) == 2:
                     if self.current_goal_id == task_id:
                         return
-                        
-                    rospy.loginfo(f">>> [임무 ID: {task_id}] 주행 시작! (목표 좌표: X={target[0]}, Y={target[1]})")
+
+                    dest_name = logistics_info.get('name', f'임무 {task_id}')
+                    rospy.loginfo(f">>> [{dest_name}(으)로 이동] 임무를 시작합니다! (목표 좌표: X={target[0]}, Y={target[1]})")
                     
                     goal = MoveBaseGoal()
                     goal.target_pose.header.frame_id = "map"

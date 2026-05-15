@@ -15,6 +15,7 @@ qr_data_list = [
         "data": {
             "id": "A1",
             "type": "START",
+            "name": "책상3",
             "tgt": [2.5, -1.0]
         }
     },
