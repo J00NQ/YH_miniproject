@@ -36,7 +36,8 @@ class PathPlannerNode:
         rospy.Subscriber('/target_logistics_info', String, self.target_callback)
         rospy.loginfo("경로 탐색 노드가 시작되었습니다. 비전 인식기의 좌표 하달을 기다립니다...")
 
-        self.current_goal_id = None
+        self.current_order_seq = None   # 현재 수행 중인 orders.seq
+        self.current_room_id   = None   # ARRIVAL QR 매칭용 room_id
 
     def _close_db(self):
         self.db.close()
@@ -67,40 +68,61 @@ class PathPlannerNode:
         qr_type = logistics_info.get('type')
 
         if qr_type == 'START':
-            task_id = logistics_info.get('id')
-
-            if self.current_goal_id == task_id:
+            if self.current_order_seq is not None:
+                rospy.logwarn("이미 수행 중인 임무가 있습니다. 현재 임무 완료 후 다시 시도하세요.")
                 return
 
-            row = self.db.execute(
-                "SELECT name, x, y, theta FROM rooms WHERE id=?", (task_id,)
-            ).fetchone()
+            # orders 큐에서 가장 오래된 pending 작업 조회
+            row = self.db.execute("""
+                SELECT o.seq, o.room_id, r.name, r.x, r.y, r.theta
+                FROM orders o JOIN rooms r ON o.room_id = r.id
+                WHERE o.status = 'pending'
+                ORDER BY o.seq ASC
+                LIMIT 1
+            """).fetchone()
 
             if row is None:
-                rospy.logwarn(f"DB에 ID '{task_id}'에 해당하는 병실 정보가 없습니다.")
+                rospy.logwarn("대기 중인 배송 작업이 없습니다. orders 테이블을 확인하세요.")
                 return
 
-            dest_name, x, y, theta = row
+            seq, room_id, dest_name, x, y, theta = row
+
+            # 작업 상태를 active로 전환
+            self.db.execute("UPDATE orders SET status='active' WHERE seq=?", (seq,))
+            self.db.commit()
+
             rospy.loginfo(
-                f">>> [{dest_name}(으)로 이동] 임무를 시작합니다! "
-                f"(목표 좌표: X={x}, Y={y}, θ={math.degrees(theta):.1f}°)"
+                f">>> [배송 시작] {dest_name}(으)로 이동합니다! "
+                f"(seq={seq}, X={x}, Y={y}, θ={math.degrees(theta):.1f}°)"
             )
 
             self._send_goal(x, y, theta)
-            self.current_goal_id = task_id
+            self.current_order_seq = seq
+            self.current_room_id   = room_id
 
         elif qr_type == 'ARR':
-            task_id = logistics_info.get('id')
-            if self.current_goal_id == task_id:
-                rospy.loginfo(
-                    f"*** 배송 완료! (Task ID: {task_id}) "
-                    f"목적지 QR 인식을 성공했습니다. 대기 상태로 전환합니다. ***"
-                )
-                self.current_goal_id = None
-            else:
+            arr_room_id = logistics_info.get('id')
+
+            if self.current_room_id is None:
+                rospy.logwarn("수행 중인 임무가 없는데 도착 QR이 인식되었습니다.")
+                return
+
+            if self.current_room_id != arr_room_id:
                 rospy.logwarn(
-                    f"도착 QR을 인식했지만, 현재 수행 중인 임무({self.current_goal_id})와 일치하지 않습니다."
+                    f"도착 QR({arr_room_id})이 현재 임무 목적지({self.current_room_id})와 일치하지 않습니다."
                 )
+                return
+
+            # 작업 완료 처리
+            self.db.execute("UPDATE orders SET status='done' WHERE seq=?", (self.current_order_seq,))
+            self.db.commit()
+
+            rospy.loginfo(
+                f"*** 배송 완료! (seq={self.current_order_seq}, 목적지={self.current_room_id}) "
+                f"대기 상태로 전환합니다. ***"
+            )
+            self.current_order_seq = None
+            self.current_room_id   = None
 
         else:
             # 구버전 호환 로직 (destination, target_coordinates)
@@ -108,7 +130,7 @@ class PathPlannerNode:
             coords = logistics_info.get('target_coordinates')
 
             if coords and len(coords) == 2:
-                if self.current_goal_id == destination:
+                if self.current_room_id == destination:
                     return
 
                 rospy.loginfo(
@@ -129,7 +151,7 @@ class PathPlannerNode:
                 else:
                     rospy.loginfo("--- 주행 목표(Goal) 가상 전송 완료! ---")
 
-                self.current_goal_id = destination
+                self.current_room_id = destination
             else:
                 rospy.logwarn("수신된 물류 데이터에 유효한 좌표 값이 없습니다.")
 

@@ -98,8 +98,11 @@ class VisionRecognizerNode:
                 return results, (x1, y1), scale
 
         # cv2.QRCodeDetector fallback: pyzbar 전부 실패 시 시도
-        # detectAndDecode는 OpenCV 4.2(ROS Noetic 기본)에서 사용 가능
-        data, pts, _ = self.qr_detector.detectAndDecode(roi)
+        # OpenCV 4.2에서 pts 윤곽 면적이 0이면 내부 decode()가 cv2.error를 던지므로 방어 처리
+        try:
+            data, pts, _ = self.qr_detector.detectAndDecode(roi)
+        except cv2.error:
+            return [], (x1, y1), 1
         if data:
             polygon = []
             if pts is not None and len(pts) > 0:
@@ -160,12 +163,11 @@ class VisionRecognizerNode:
                     try:
                         logistics_info = json.loads(qr_data)
                         qr_type = logistics_info.get('type')
-                        task_id = logistics_info.get('id', 'Unknown')
+                        task_id = logistics_info.get('id')
 
                         if qr_type == 'START':
-                            dest_name = logistics_info.get('name', '목적지')
                             rospy.loginfo(f"=====================================================")
-                            rospy.loginfo(f"[배송 시작 QR 감지!] 임무 ID: {task_id} / 임무: {dest_name}(으)로 이동")
+                            rospy.loginfo(f"[배송 시작 QR 감지!] 목적지는 orders DB에서 결정됩니다.")
                             rospy.loginfo(f"=====================================================")
                         elif qr_type == 'ARR':
                             rospy.loginfo(f"=====================================================")

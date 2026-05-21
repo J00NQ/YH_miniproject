@@ -8,11 +8,9 @@ import os
 # 생성할 모델들이 저장될 최상위 경로 (현재 경로의 ../models)
 MODELS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../models'))
 
-# QR 데이터 정의 — id + type만 인코딩 (좌표는 DB에서 조회)
+# QR 데이터 정의 — START는 단일 QR, 목적지는 orders DB에서 결정
 qr_data_list = [
-    {"model_name": "qr_start_R001",   "data": {"id": "R001", "type": "START"}},
-    {"model_name": "qr_start_R002",   "data": {"id": "R002", "type": "START"}},
-    {"model_name": "qr_start_R003",   "data": {"id": "R003", "type": "START"}},
+    {"model_name": "qr_start",        "data": {"type": "START"}},
     {"model_name": "qr_arrival_R001", "data": {"id": "R001", "type": "ARR"}},
     {"model_name": "qr_arrival_R002", "data": {"id": "R002", "type": "ARR"}},
     {"model_name": "qr_arrival_R003", "data": {"id": "R003", "type": "ARR"}},
