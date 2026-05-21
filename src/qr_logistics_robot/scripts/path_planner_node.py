@@ -28,7 +28,7 @@ class PathPlannerNode:
             os.path.join(os.path.dirname(__file__), '../db/hospital_rooms.db')
         )
         db_path = rospy.get_param('~db_path', default_db)
-        self.db = sqlite3.connect(db_path)
+        self.db = sqlite3.connect(db_path, check_same_thread=False)
         rospy.loginfo(f"병실 DB 연결 완료: {db_path}")
         rospy.on_shutdown(self._close_db)
 
