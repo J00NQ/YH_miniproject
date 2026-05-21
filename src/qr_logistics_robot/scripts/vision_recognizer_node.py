@@ -159,7 +159,9 @@ class VisionRecognizerNode:
                     cv2.circle(cv_image, (cx, cy), 5, (0, 0, 255), -1)
 
                 # 3. 데이터 파싱 및 퍼블리시
-                if qr_data != self.last_published_data:
+                # ARR은 path_planner가 중복을 처리하므로 항상 발행 (last_published_data 체크 제외)
+                # START는 이동 중 재발행 방지를 위해 중복 체크 유지
+                if qr_data != self.last_published_data or qr_type == 'ARR':
                     try:
                         logistics_info = json.loads(qr_data)
                         qr_type = logistics_info.get('type')
