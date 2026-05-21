@@ -101,19 +101,11 @@ class PathPlannerNode:
             self.current_room_id   = room_id
 
         elif qr_type == 'ARR':
-            arr_room_id = logistics_info.get('id')
-
-            if self.current_room_id is None:
+            if self.current_order_seq is None:
                 rospy.logwarn("수행 중인 임무가 없는데 도착 QR이 인식되었습니다.")
                 return
 
-            if self.current_room_id != arr_room_id:
-                rospy.logwarn(
-                    f"도착 QR({arr_room_id})이 현재 임무 목적지({self.current_room_id})와 일치하지 않습니다."
-                )
-                return
-
-            # 작업 완료 처리
+            # 작업 완료 처리 (단일 ARR QR — id 검증 없음)
             self.db.execute("UPDATE orders SET status='done' WHERE seq=?", (self.current_order_seq,))
             self.db.commit()
 

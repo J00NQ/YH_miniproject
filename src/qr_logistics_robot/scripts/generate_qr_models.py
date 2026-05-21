@@ -8,12 +8,9 @@ import os
 # 생성할 모델들이 저장될 최상위 경로 (현재 경로의 ../models)
 MODELS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../models'))
 
-# QR 데이터 정의 — START는 단일 QR, 목적지는 orders DB에서 결정
+# QR 데이터 정의 — ARR 단일 QR (START QR 없음, 출발은 DB 폴링으로 자동 감지)
 qr_data_list = [
-    {"model_name": "qr_start",        "data": {"type": "START"}},
-    {"model_name": "qr_arrival_R001", "data": {"id": "R001", "type": "ARR"}},
-    {"model_name": "qr_arrival_R002", "data": {"id": "R002", "type": "ARR"}},
-    {"model_name": "qr_arrival_R003", "data": {"id": "R003", "type": "ARR"}},
+    {"model_name": "qr_arrival", "data": {"type": "ARR"}},
 ]
 
 # 가제보 모델 SDF 템플릿 (크기: 0.2 0.2 0.01)
