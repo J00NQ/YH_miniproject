@@ -7,6 +7,7 @@ import json
 import math
 import sqlite3
 import os
+from actionlib_msgs.msg import GoalStatus
 from std_msgs.msg import String
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 
@@ -32,18 +33,35 @@ class PathPlannerNode:
         rospy.loginfo(f"병실 DB 연결 완료: {db_path}")
         rospy.on_shutdown(self._close_db)
 
-        # 비전 인식 노드 구독
-        rospy.Subscriber('/target_logistics_info', String, self.target_callback)
-        rospy.loginfo("경로 탐색 노드가 시작되었습니다. 비전 인식기의 좌표 하달을 기다립니다...")
+        self.current_order_seq = None
+        self.current_room_id   = None
 
-        self.current_order_seq = None   # 현재 수행 중인 orders.seq
-        self.current_room_id   = None   # ARRIVAL QR 매칭용 room_id
+        # ARR QR 구독
+        rospy.Subscriber('/target_logistics_info', String, self._arr_callback)
+
+        # 5초마다 orders 폴링 (대기 상태일 때만 출발)
+        rospy.Timer(rospy.Duration(5.0), self._poll_orders)
+
+        rospy.loginfo("경로 탐색 노드 시작. 5초마다 DB를 폴링합니다...")
 
     def _close_db(self):
         self.db.close()
         rospy.loginfo("병실 DB 연결 종료.")
 
-    def _send_goal(self, x, y, theta):
+    # ── 상태 헬퍼 ────────────────────────────────────────────────────────────
+
+    def _get_robot_status(self):
+        row = self.db.execute("SELECT status FROM robot WHERE id=1").fetchone()
+        return row[0] if row else None
+
+    def _set_robot_status(self, status):
+        self.db.execute("UPDATE robot SET status=? WHERE id=1", (status,))
+        self.db.commit()
+        rospy.loginfo(f"[robot.status] → {status}")
+
+    # ── goal 전송 ─────────────────────────────────────────────────────────────
+
+    def _send_goal(self, x, y, theta, done_cb=None):
         goal = MoveBaseGoal()
         goal.target_pose.header.frame_id = "map"
         goal.target_pose.header.stamp = rospy.Time.now()
@@ -53,99 +71,90 @@ class PathPlannerNode:
         goal.target_pose.pose.orientation.w = math.cos(theta / 2.0)
 
         if self.client.wait_for_server(rospy.Duration(0.1)):
-            self.client.send_goal(goal)
-            rospy.loginfo("--- 주행 목표(Goal) 실제 전송 완료! ---")
+            self.client.send_goal(goal, done_cb=done_cb)
+            rospy.loginfo(f"--- Goal 전송 완료 (X={x:.4f}, Y={y:.4f}, θ={math.degrees(theta):.1f}°) ---")
         else:
-            rospy.loginfo("--- 주행 목표(Goal) 가상 전송 완료! (Navigation 스택 가동 시 로봇이 즉시 출발합니다) ---")
+            rospy.logwarn("Navigation 서버 미연결 — Goal 전송 실패")
 
-    def target_callback(self, data):
+    def _send_home_goal(self):
+        row = self.db.execute(
+            "SELECT home_x, home_y, home_theta FROM robot WHERE id=1"
+        ).fetchone()
+        if row is None:
+            rospy.logerr("robot 테이블에서 홈 좌표를 읽을 수 없습니다.")
+            return
+        home_x, home_y, home_theta = row
+        rospy.loginfo(">>> [홈 복귀] 출발 지점으로 돌아갑니다.")
+        self._send_goal(home_x, home_y, home_theta, done_cb=self._on_home_arrived)
+
+    # ── 홈 도착 콜백 ──────────────────────────────────────────────────────────
+
+    def _on_home_arrived(self, state, result):
+        if state == GoalStatus.SUCCEEDED:
+            self._set_robot_status('대기')
+            rospy.loginfo("=== 홈 복귀 완료. 대기 상태로 전환합니다. ===")
+        else:
+            rospy.logwarn(f"홈 복귀 실패 (GoalStatus={state}). 수동 확인이 필요합니다.")
+
+    # ── DB 폴링 타이머 ────────────────────────────────────────────────────────
+
+    def _poll_orders(self, event):
+        if self._get_robot_status() != '대기':
+            return
+
+        row = self.db.execute("""
+            SELECT o.seq, o.room_id, r.name, r.x, r.y, r.theta
+            FROM orders o JOIN rooms r ON o.room_id = r.id
+            WHERE o.status = 'pending'
+            ORDER BY o.seq ASC
+            LIMIT 1
+        """).fetchone()
+
+        if row is None:
+            return
+
+        seq, room_id, dest_name, x, y, theta = row
+
+        self.db.execute("UPDATE orders SET status='active' WHERE seq=?", (seq,))
+        self._set_robot_status('이동중')
+
+        rospy.loginfo(
+            f">>> [배송 시작] {dest_name}(으)로 이동합니다! "
+            f"(seq={seq}, X={x}, Y={y}, θ={math.degrees(theta):.1f}°)"
+        )
+
+        self.current_order_seq = seq
+        self.current_room_id   = room_id
+        self._send_goal(x, y, theta)
+
+    # ── ARR QR 수신 콜백 ──────────────────────────────────────────────────────
+
+    def _arr_callback(self, data):
         try:
             logistics_info = json.loads(data.data)
         except json.JSONDecodeError:
             rospy.logerr("수신된 데이터를 JSON으로 파싱할 수 없습니다.")
             return
 
-        qr_type = logistics_info.get('type')
+        if logistics_info.get('type') != 'ARR':
+            return
 
-        if qr_type == 'START':
-            if self.current_order_seq is not None:
-                rospy.logwarn("이미 수행 중인 임무가 있습니다. 현재 임무 완료 후 다시 시도하세요.")
-                return
+        if self.current_order_seq is None:
+            rospy.logwarn("수행 중인 임무가 없는데 도착 QR이 인식되었습니다.")
+            return
 
-            # orders 큐에서 가장 오래된 pending 작업 조회
-            row = self.db.execute("""
-                SELECT o.seq, o.room_id, r.name, r.x, r.y, r.theta
-                FROM orders o JOIN rooms r ON o.room_id = r.id
-                WHERE o.status = 'pending'
-                ORDER BY o.seq ASC
-                LIMIT 1
-            """).fetchone()
+        # 배송 완료 처리
+        self.db.execute("UPDATE orders SET status='done' WHERE seq=?", (self.current_order_seq,))
+        self._set_robot_status('복귀')
 
-            if row is None:
-                rospy.logwarn("대기 중인 배송 작업이 없습니다. orders 테이블을 확인하세요.")
-                return
+        rospy.loginfo(
+            f"*** 배송 완료! (seq={self.current_order_seq}, 목적지={self.current_room_id}) "
+            f"홈으로 복귀합니다. ***"
+        )
 
-            seq, room_id, dest_name, x, y, theta = row
-
-            # 작업 상태를 active로 전환
-            self.db.execute("UPDATE orders SET status='active' WHERE seq=?", (seq,))
-            self.db.commit()
-
-            rospy.loginfo(
-                f">>> [배송 시작] {dest_name}(으)로 이동합니다! "
-                f"(seq={seq}, X={x}, Y={y}, θ={math.degrees(theta):.1f}°)"
-            )
-
-            self._send_goal(x, y, theta)
-            self.current_order_seq = seq
-            self.current_room_id   = room_id
-
-        elif qr_type == 'ARR':
-            if self.current_order_seq is None:
-                rospy.logwarn("수행 중인 임무가 없는데 도착 QR이 인식되었습니다.")
-                return
-
-            # 작업 완료 처리 (단일 ARR QR — id 검증 없음)
-            self.db.execute("UPDATE orders SET status='done' WHERE seq=?", (self.current_order_seq,))
-            self.db.commit()
-
-            rospy.loginfo(
-                f"*** 배송 완료! (seq={self.current_order_seq}, 목적지={self.current_room_id}) "
-                f"대기 상태로 전환합니다. ***"
-            )
-            self.current_order_seq = None
-            self.current_room_id   = None
-
-        else:
-            # 구버전 호환 로직 (destination, target_coordinates)
-            destination = logistics_info.get('destination')
-            coords = logistics_info.get('target_coordinates')
-
-            if coords and len(coords) == 2:
-                if self.current_room_id == destination:
-                    return
-
-                rospy.loginfo(
-                    f">>> [{destination}] 구역으로 주행 명령을 하달합니다! "
-                    f"(목표 좌표: X={coords[0]}, Y={coords[1]})"
-                )
-
-                goal = MoveBaseGoal()
-                goal.target_pose.header.frame_id = "map"
-                goal.target_pose.header.stamp = rospy.Time.now()
-                goal.target_pose.pose.position.x = float(coords[0]) - 1.0
-                goal.target_pose.pose.position.y = float(coords[1])
-                goal.target_pose.pose.orientation.w = 1.0
-
-                if self.client.wait_for_server(rospy.Duration(0.1)):
-                    self.client.send_goal(goal)
-                    rospy.loginfo("--- 주행 목표(Goal) 실제 전송 완료! ---")
-                else:
-                    rospy.loginfo("--- 주행 목표(Goal) 가상 전송 완료! ---")
-
-                self.current_room_id = destination
-            else:
-                rospy.logwarn("수신된 물류 데이터에 유효한 좌표 값이 없습니다.")
+        self.current_order_seq = None
+        self.current_room_id   = None
+        self._send_home_goal()
 
 if __name__ == '__main__':
     try:

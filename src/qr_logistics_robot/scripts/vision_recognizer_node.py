@@ -159,26 +159,18 @@ class VisionRecognizerNode:
                     cv2.circle(cv_image, (cx, cy), 5, (0, 0, 255), -1)
 
                 # 3. 데이터 파싱 및 퍼블리시
-                # ARR은 path_planner가 중복을 처리하므로 항상 발행 (last_published_data 체크 제외)
-                # START는 이동 중 재발행 방지를 위해 중복 체크 유지
+                # ARR은 path_planner가 중복을 처리하므로 항상 발행
                 if qr_data != self.last_published_data or qr_type == 'ARR':
                     try:
                         logistics_info = json.loads(qr_data)
                         qr_type = logistics_info.get('type')
-                        task_id = logistics_info.get('id')
 
-                        if qr_type == 'START':
+                        if qr_type == 'ARR':
                             rospy.loginfo(f"=====================================================")
-                            rospy.loginfo(f"[배송 시작 QR 감지!] 목적지는 orders DB에서 결정됩니다.")
-                            rospy.loginfo(f"=====================================================")
-                        elif qr_type == 'ARR':
-                            rospy.loginfo(f"=====================================================")
-                            rospy.loginfo(f"[도착 확인 QR 감지!] 임무 완료 대기 중...")
+                            rospy.loginfo(f"[도착 확인 QR 감지!] 수령 확인 처리 중...")
                             rospy.loginfo(f"=====================================================")
                         else:
-                            rospy.loginfo(f"=====================================================")
-                            rospy.loginfo(f"[새로운 QR 감지!] 임무 ID: {task_id} / 주행 시작 대기 중...")
-                            rospy.loginfo(f"=====================================================")
+                            rospy.loginfo(f"[QR 감지] type={qr_type}")
 
                         # 파싱된 데이터 문자열을 ROS Topic으로 발행
                         self.pub.publish(qr_data)
