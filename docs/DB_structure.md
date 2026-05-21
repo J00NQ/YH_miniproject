@@ -11,7 +11,7 @@
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
-| `id` | TEXT | PRIMARY KEY | QR 코드에 인코딩되는 병실 ID |
+| `id` | TEXT | PRIMARY KEY | 병실 ID |
 | `name` | TEXT | NOT NULL | 표시용 이름 |
 | `x` | REAL | NOT NULL | Navigation 목표 x 좌표 (map frame) |
 | `y` | REAL | NOT NULL | Navigation 목표 y 좌표 (map frame) |
@@ -31,16 +31,15 @@ CREATE TABLE IF NOT EXISTS rooms (
 
 | id | name | x | y | theta |
 |----|------|---|---|-------|
-| R001 | 1병실 | 1.6703 | -11.0 | -1.5708 |
-| R002 | 2병실 | -0.6141 | -11.0 | -1.5708 |
-| R003 | 3병실 | -3.0615 | -11.0 | -1.5708 |
+| R001 | 1병실 | 1.6703 | -11.0 | 0.0 |
+| R002 | 2병실 | -0.6141 | -11.0 | 0.0 |
+| R003 | 3병실 | -3.0615 | -11.0 | 0.0 |
 
 ---
 
-### 2. `orders` — 배송 작업 큐 (추가 예정)
+### 2. `orders` — 배송 작업 큐
 
-START QR을 단일 QR로 통합하기 위해 도입.  
-로봇은 START QR 인식 시 `status='pending'`인 행 중 `seq`가 가장 작은 항목을 조회하여 목적지를 결정한다.
+DB 폴링 방식에서 로봇이 5초마다 조회하여 pending 작업을 자동 감지한다.
 
 | 컬럼 | 타입 | 제약 | 설명 |
 |------|------|------|------|
@@ -60,26 +59,45 @@ CREATE TABLE IF NOT EXISTS orders (
 **status 상태 전이**
 
 ```
-pending → active  : START QR 인식 후 해당 작업 선택 시
-active  → done    : ARRIVAL QR 인식 후 배송 완료 시
+pending → active  : 폴링으로 작업 선택 시
+active  → done    : ARR QR 인식 후 배송 완료 시
 ```
 
-**동작 방식 (큐)**
+---
+
+### 3. `robot` — 로봇 상태 및 홈 좌표
+
+로봇의 현재 운행 상태와 홈 복귀 좌표를 저장한다.  
+단일 로봇 운용 기준으로 항상 1행(id=1)만 존재한다.
+
+| 컬럼 | 타입 | 제약 | 설명 |
+|------|------|------|------|
+| `id` | INTEGER | PRIMARY KEY DEFAULT 1 | 로봇 식별자 (단일 로봇: 항상 1) |
+| `status` | TEXT | NOT NULL, DEFAULT '대기' | 로봇 운행 상태 |
+| `home_x` | REAL | NOT NULL, DEFAULT 0.0 | 홈 x 좌표 |
+| `home_y` | REAL | NOT NULL, DEFAULT 0.0 | 홈 y 좌표 |
+| `home_theta` | REAL | NOT NULL, DEFAULT 3.1416 | 홈 도착 방향 (π rad = 180°) |
 
 ```sql
--- 로봇이 START QR 인식 시: 가장 오래된 pending 작업 조회
-SELECT o.seq, r.name, r.x, r.y, r.theta
-FROM orders o JOIN rooms r ON o.room_id = r.id
-WHERE o.status = 'pending'
-ORDER BY o.seq ASC
-LIMIT 1;
-
--- 조회 후 즉시 active로 전환
-UPDATE orders SET status = 'active' WHERE seq = ?;
-
--- ARRIVAL QR 인식 시 완료 처리
-UPDATE orders SET status = 'done' WHERE seq = ?;
+CREATE TABLE IF NOT EXISTS robot (
+    id         INTEGER PRIMARY KEY DEFAULT 1,
+    status     TEXT NOT NULL DEFAULT '대기',
+    home_x     REAL NOT NULL DEFAULT 0.0,
+    home_y     REAL NOT NULL DEFAULT 0.0,
+    home_theta REAL NOT NULL DEFAULT 3.1416
+    -- status 값: '대기' | '이동중' | '복귀'
+);
 ```
+
+**status 상태 전이**
+
+```
+대기   →(pending 작업 발견)→  이동중
+이동중 →(ARR QR 인식)→       복귀
+복귀   →(홈 도착)→            대기
+```
+
+**폴링 조건**: `robot.status = '대기'`일 때만 orders 테이블 조회
 
 ---
 
@@ -88,4 +106,5 @@ UPDATE orders SET status = 'done' WHERE seq = ?;
 | 날짜 | 변경 내용 |
 |------|-----------|
 | 2026-05-21 | `rooms` 테이블 최초 설계 및 R001~R003 데이터 삽입 |
-| 2026-05-21 | `orders` 테이블 설계 (단일 START QR 대응, 미구현) |
+| 2026-05-21 | `orders` 테이블 추가 (단일 START QR 대응) |
+| 2026-05-21 | `robot` 테이블 추가 (DB 폴링 자율 운행 브랜치) |
