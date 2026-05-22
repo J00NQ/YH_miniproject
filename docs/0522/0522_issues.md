@@ -115,10 +115,42 @@ Ubuntu 실행 시 `DB_PATH` 환경변수로 경로를 지정하면 정상 동작
 DB_PATH=~/catkin_ws/src/qr_logistics_robot/db/hospital_rooms.db python3 web/app.py
 ```
 
-### 미결 사항
+### 배경 제약
 
-- Windows 로컬 개발 시 DB 접근 방법 (복사본 사용 or 원격 접근)
-- 웹 수정 내용을 Ubuntu DB에 반영하는 동기화 방법 결정
+- Ubuntu VMware에서 Gazebo + ROS + Flask를 동시 구동하면 메모리/CPU 부담 증가
+- Windows에서 Flask를 실행하면 Ubuntu SQLite DB에 직접 접근 불가
+
+### 방안 비교
+
+| 방안 | 내용 | 장점 | 단점 |
+|------|------|------|------|
+| **A. 역할 분리** | `/arrival-qr`만 Windows Flask 실행 (DB 불필요), 전체 대시보드는 Ubuntu | QR 표시에 DB 불필요 → 즉시 구현 가능 | 두 서버 병행 필요 |
+| **B. VMware 공유 폴더** | Ubuntu DB 파일을 VMware Shared Folder로 Windows에 마운트 → Windows Flask에서 직접 읽기 | 단일 서버로 통합 | 공유 폴더 설정 필요, 쓰기 충돌 위험 |
+| **C. Ubuntu 단독 실행** | Flask를 Ubuntu에서만 구동, Gazebo 비활성 시에만 대시보드 사용 | 구조 단순 | Gazebo와 동시 사용 불가 |
+
+### 채택 방안 — A (역할 분리) + C (시간 분리)
+
+**테스트 시나리오에서:**
+```
+[QR 표시 단계]
+  Windows Flask (web/app.py) 실행 → /arrival-qr 접속
+  → DB 없어도 QR 이미지 생성 가능 (qrcode 라이브러리만 사용)
+
+[대시보드 관리 단계]  (Gazebo 비활성 또는 가벼운 작업 시)
+  Ubuntu Flask 실행
+  DB_PATH=~/catkin_ws/.../hospital_rooms.db python3 web/app.py
+```
+
+**운용 원칙:**
+- `/arrival-qr`, `/arrival-qr/image` 라우트는 DB 의존성 제거 상태 유지
+- 대시보드(rooms/orders/robot 관리)는 Ubuntu에서만 실행
+- 두 라우트 그룹을 동시에 쓸 필요가 있으면 방안 B(공유 폴더) 검토
+
+### 구현 완료 기준
+
+- [ ] `web/app.py`에 `/arrival-qr`, `/arrival-qr/image` 라우트 추가 (DB 미사용)
+- [ ] `web/requirements.txt`에 `qrcode[pil]>=7.4` 추가
+- [ ] `web/templates/arrival_qr.html` 작성 (모니터 표시 최적화)
 
 ---
 
@@ -128,4 +160,4 @@ DB_PATH=~/catkin_ws/src/qr_logistics_robot/db/hospital_rooms.db python3 web/app.
 |------|------|
 | Issue 1 — R002 QR 미인식 | 완료 (2단계 감지로 해결, 근본 원인은 2D Pose Estimate 오차) |
 | Issue 2 — 복귀 중 ARR 재인식 | 완료 (ARR 쿨다운 10초 추가) |
-| Issue 3 — 웹 대시보드 DB 동기화 | 미결 |
+| Issue 3 — 웹 대시보드 DB 동기화 | 방안 확정 (역할 분리 + 시간 분리), 구현 진행 중 |

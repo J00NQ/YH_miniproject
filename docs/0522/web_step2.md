@@ -112,14 +112,56 @@ def arrival_qr():
 
 ---
 
+## 테스트 환경 조건 완화
+
+> 기능 확인만 간단히 하기 위해 아래 대체 구성을 사용한다. (`docs/0522/test.md` 참고)
+
+| 항목 | 실제 시나리오 | 테스트 대체 구성 |
+|------|-------------|----------------|
+| QR 표시 매체 | 스마트폰 화면 | **컴퓨터 모니터** (Flask `/arrival-qr` 페이지) |
+| QR 인식 카메라 | wafflebot 시뮬레이션 카메라 | **Ubuntu 연결 USB 웹캠** |
+| Flask 실행 위치 | Ubuntu | **Windows** (`/arrival-qr` 페이지는 DB 불필요) |
+
+### 테스트 흐름
+
+```
+Windows Flask 서버 실행 (DB 없어도 /arrival-qr 동작)
+  → 컴퓨터 모니터에 http://localhost:5000/arrival-qr 표시
+  → Ubuntu에서 webcam_qr_node.py 실행 (USB 웹캠 → QR 감지)
+  → ARR 인식 → /target_logistics_info 발행
+  → path_planner_node 복귀 명령 처리
+```
+
+### 추가 구현 항목 — webcam_qr_node.py
+
+`vision_recognizer_node`는 Gazebo 시뮬레이션 카메라(`/camera/rgb/image_raw`)에 묶여 있으므로,
+USB 웹캠 전용 경량 노드를 별도 작성한다.
+
+```
+scripts/webcam_qr_node.py
+  - cv2.VideoCapture(0) 으로 USB 웹캠 직접 접근 (ROS 토픽 불필요)
+  - vision_recognizer_node와 동일한 2단계 QR 감지 로직 재사용
+  - ARR 인식 시 /target_logistics_info 발행
+  - ARR 쿨다운(10초) 동일 적용
+  - rospy.Publisher로 path_planner_node와 연동
+```
+
+실행:
+```bash
+# 터미널 (Ubuntu) — 웹캠 QR 노드
+rosrun qr_logistics_robot webcam_qr_node.py
+```
+
+---
+
 ## 구현 순서
 
 1. `requirements.txt`에 `qrcode[pil]` 추가
 2. `app.py`에 `/arrival-qr`, `/arrival-qr/image` 라우트 추가
-3. `templates/arrival_qr.html` 작성 (스마트폰 최적화)
+3. `templates/arrival_qr.html` 작성 (모니터 표시 최적화)
 4. `orders.html`, `index.html`에 active 주문 시 QR 링크 버튼 추가
-5. Ubuntu 환경에서 스마트폰 접속 테스트
-6. 로봇 카메라 인식 테스트 (거리·각도 조정)
+5. `scripts/webcam_qr_node.py` 작성 (USB 웹캠 → ARR 감지)
+6. Windows Flask + Ubuntu 웹캠 노드 연동 테스트
 
 ---
 
@@ -129,5 +171,4 @@ def arrival_qr():
 |------|------|
 | 쿨다운 충돌 | 가제보 ARR QR 인식 후 10초 쿨다운으로 웹 QR 즉시 인식 불가 가능 |
 | 가제보 QR 패널 공존 | 물리 패널과 웹 QR 중복 사용 시 먼저 인식되는 쪽이 처리됨 |
-| 스마트폰 화면 반사 | 조명 환경에 따라 인식률 저하 가능 |
-| Ubuntu IP 안내 | 접속 URL을 대시보드에 표시하는 기능 추가 검토 |
+| webcam_qr_node 독립성 | vision_recognizer_node와 동시 실행 시 ARR 중복 발행 가능 — 한쪽만 실행할 것 |

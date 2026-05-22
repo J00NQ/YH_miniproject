@@ -116,6 +116,19 @@ select {
   margin-left: 0.3rem;
 }
 
+/* 수령 확인 QR 링크 버튼 */
+.btn-qr {
+  display: inline-block;
+  padding: 0.3rem 0.8rem;
+  background: #2980b9;
+  color: #fff;
+  border-radius: 4px;
+  font-size: 0.82rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.btn-qr:hover { background: #3498db; }
+
 /* 테이블 상단 액션 영역 */
 .table-actions {
   display: flex;

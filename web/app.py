@@ -5,10 +5,12 @@
 DB_PATH 환경변수로 SQLite 경로 지정 (미설정 시 개발용 기본 경로 사용)
 """
 
+import io
 import os
 import math
 import sqlite3
-from flask import Flask, render_template, request, redirect, url_for, flash
+import qrcode
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file
 
 app = Flask(__name__)
 app.secret_key = 'qr-logistics-dev-key'
@@ -128,6 +130,27 @@ def orders_cancel(seq):
         flash(f'주문 #{seq}이 취소되었습니다.')
     con.close()
     return redirect(url_for('orders'))
+
+
+# ── 수령 확인 QR (DB 불필요) ──────────────────────────────────────────────────
+ARR_QR_DATA = '{"type":"ARR"}'
+
+
+@app.route('/arrival-qr/image')
+def arrival_qr_image():
+    qr = qrcode.QRCode(version=1, box_size=12, border=4)
+    qr.add_data(ARR_QR_DATA)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color='black', back_color='white')
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    return send_file(buf, mimetype='image/png')
+
+
+@app.route('/arrival-qr')
+def arrival_qr():
+    return render_template('arrival_qr.html')
 
 
 if __name__ == '__main__':
