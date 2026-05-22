@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}로봇 상태{% endblock %}
+{% block content %}
+<h1>로봇 상태 <span class="readonly-badge">읽기 전용</span></h1>
+<table>
+  <tr><th>항목</th><th>값</th></tr>
+  <tr><td>상태</td><td class="status-{{ robot['status'] }}">{{ robot['status'] }}</td></tr>
+  <tr><td>홈 X</td><td>{{ robot['home_x'] | f2 }}</td></tr>
+  <tr><td>홈 Y</td><td>{{ robot['home_y'] | f2 }}</td></tr>
+  <tr><td>홈 θ</td>
+      <td>{{ robot['home_theta'] | f2 }} rad
+          <span class="deg-label">({{ robot['home_theta'] | deg }}°)</span>
+      </td>
+  </tr>
+</table>
+<p class="hint">로봇 상태는 path_planner_node가 자동으로 갱신합니다.</p>
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block title %}주문 관리{% endblock %}
+{% block content %}
+<h1>주문 관리</h1>
+
+<section>
+  <h2>새 주문 추가</h2>
+  <form method="post" action="{{ url_for('orders_add') }}" class="inline-form">
+    <select name="room_id" required>
+      <option value="">병실 선택</option>
+      {% for r in rooms %}
+      <option value="{{ r['id'] }}">{{ r['name'] }} ({{ r['id'] }})</option>
+      {% endfor %}
+    </select>
+    <button type="submit">추가</button>
+  </form>
+</section>
+
+<section>
+  <h2>주문 목록</h2>
+  <table>
+    <tr><th>#</th><th>병실</th><th>상태</th><th>수령 확인</th><th>취소</th></tr>
+    {% for o in orders %}
+    <tr>
+      <td>{{ o['seq'] }}</td>
+      <td>{{ o['name'] }} ({{ o['room_id'] }})</td>
+      <td class="status-{{ o['status'] }}">{{ o['status'] }}</td>
+      <td>
+        {% if o['status'] == 'active' %}
+        <a href="{{ url_for('arrival_qr') }}" class="btn-qr">QR 보기</a>
+        {% else %}
+        —
+        {% endif %}
+      </td>
+      <td>
+        {% if o['status'] == 'pending' %}
+        <form method="post" action="{{ url_for('orders_cancel', seq=o['seq']) }}"
+              onsubmit="return confirm('주문 #{{ o.seq }}을 취소할까요?')">
+          <button type="submit" class="btn-cancel">취소</button>
+        </form>
+        {% else %}
+        —
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+{% endblock %}

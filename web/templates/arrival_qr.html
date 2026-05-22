@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>수령 확인 QR</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Segoe UI', sans-serif;
+    }
+    img {
+      width: min(90vw, 90vh);
+      height: min(90vw, 90vh);
+      image-rendering: pixelated;
+    }
+    p {
+      margin-top: 1.2rem;
+      font-size: 0.95rem;
+      color: #555;
+      text-align: center;
+    }
+    a {
+      display: block;
+      margin-top: 1.5rem;
+      font-size: 0.85rem;
+      color: #aaa;
+      text-decoration: none;
+    }
+    a:hover { color: #555; }
+  </style>
+</head>
+<body>
+  <img src="{{ url_for('arrival_qr_image') }}" alt="수령 확인 QR">
+  <p>화면 밝기를 최대로 설정한 후<br>로봇 카메라 앞에 제시하세요.</p>
+  <a href="{{ url_for('index') }}">← 대시보드로 돌아가기</a>
+</body>
+</html>
