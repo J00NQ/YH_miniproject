@@ -1,4 +1,22 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
+
+# ROS
+*.bag
+
+# DB
 src/qr_logistics_robot/db/
+
+# 로컬 전용 (비추적 파일 보관 폴더 및 보고서)
+docs/gitignore/
+docs/report_draft.md
+
+# Flask
+web/instance/
+
+# OS
+.DS_Store
+Thumbs.db
