@@ -73,36 +73,39 @@ class VisionRecognizerNode:
         self.path_distance = distance
 
     def detect_qr(self, cv_image):
-        """중앙 ROI 크롭 + 멀티스케일 업스케일로 소형 QR 인식.
+        """전체 프레임 멀티스케일 QR 인식.
+        1차: 원본 그레이스케일 (Gazebo 고대비 QR에 효과적)
+        2차: CLAHE+Otsu 전처리 (저대비·소형 QR 보완)
         반환: (decoded_list, roi_offset(x,y), scale)
         """
-        h, w = cv_image.shape[:2]
+        gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
 
-        # 화면 중앙 60% 영역 크롭 (로봇 정면 QR이 항상 중앙에 위치)
-        x1, y1 = int(w * 0.2), int(h * 0.2)
-        x2, y2 = int(w * 0.8), int(h * 0.8)
-        roi = cv_image[y1:y2, x1:x2]
+        # 1차 시도: 전처리 없이 원본 그레이스케일
+        # 배경 포함 전체 프레임에 Otsu를 적용하면 히스토그램이 왜곡되어
+        # 오히려 인식률이 떨어지는 경우가 있으므로 원본을 먼저 시도
+        for scale in [1, 2, 4]:
+            img = cv2.resize(gray, None, fx=scale, fy=scale,
+                             interpolation=cv2.INTER_CUBIC) if scale > 1 else gray
+            results = decode(img)
+            if results:
+                return results, (0, 0), scale
 
-        # 전처리: 그레이스케일 → CLAHE → Otsu 이진화
-        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        # 2차 시도: CLAHE → Otsu 이진화 (1차 실패 시)
         enhanced = self.clahe.apply(gray)
         _, thresh = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-
-        # pyzbar: ROI 원본(1x) → 2x → 4x 순으로 업스케일 후 디코딩 시도
-        # 업스케일로 QR 모듈당 픽셀 수를 늘려 pyzbar 인식률 향상
         for scale in [1, 2, 4]:
             img = cv2.resize(thresh, None, fx=scale, fy=scale,
                              interpolation=cv2.INTER_CUBIC) if scale > 1 else thresh
             results = decode(img)
             if results:
-                return results, (x1, y1), scale
+                return results, (0, 0), scale
 
         # cv2.QRCodeDetector fallback: pyzbar 전부 실패 시 시도
         # OpenCV 4.2에서 pts 윤곽 면적이 0이면 내부 decode()가 cv2.error를 던지므로 방어 처리
         try:
-            data, pts, _ = self.qr_detector.detectAndDecode(roi)
+            data, pts, _ = self.qr_detector.detectAndDecode(cv_image)
         except cv2.error:
-            return [], (x1, y1), 1
+            return [], (0, 0), 1
         if data:
             polygon = []
             if pts is not None and len(pts) > 0:
@@ -113,9 +116,9 @@ class VisionRecognizerNode:
             obj = _QR()
             obj.data = data.encode('utf-8')
             obj.polygon = polygon
-            return [obj], (x1, y1), 1
+            return [obj], (0, 0), 1
 
-        return [], (x1, y1), 1
+        return [], (0, 0), 1
 
     def image_callback(self, data):
         # FPS 측정 (현재 시간)
@@ -159,27 +162,27 @@ class VisionRecognizerNode:
                     cv2.circle(cv_image, (cx, cy), 5, (0, 0, 255), -1)
 
                 # 3. 데이터 파싱 및 퍼블리시
+                try:
+                    logistics_info = json.loads(qr_data)
+                    qr_type = logistics_info.get('type')
+                except json.JSONDecodeError:
+                    rospy.logwarn("인식된 데이터가 유효한 JSON 포맷이 아닙니다.")
+                    qr_type = None
+
                 # ARR은 path_planner가 중복을 처리하므로 항상 발행
-                if qr_data != self.last_published_data or qr_type == 'ARR':
-                    try:
-                        logistics_info = json.loads(qr_data)
-                        qr_type = logistics_info.get('type')
+                if qr_type is not None and (qr_data != self.last_published_data or qr_type == 'ARR'):
+                    if qr_type == 'ARR':
+                        rospy.loginfo(f"=====================================================")
+                        rospy.loginfo(f"[도착 확인 QR 감지!] 수령 확인 처리 중...")
+                        rospy.loginfo(f"=====================================================")
+                    else:
+                        rospy.loginfo(f"[QR 감지] type={qr_type}")
 
-                        if qr_type == 'ARR':
-                            rospy.loginfo(f"=====================================================")
-                            rospy.loginfo(f"[도착 확인 QR 감지!] 수령 확인 처리 중...")
-                            rospy.loginfo(f"=====================================================")
-                        else:
-                            rospy.loginfo(f"[QR 감지] type={qr_type}")
+                    # 파싱된 데이터 문자열을 ROS Topic으로 발행
+                    self.pub.publish(qr_data)
 
-                        # 파싱된 데이터 문자열을 ROS Topic으로 발행
-                        self.pub.publish(qr_data)
-
-                        # 중복 방지를 위해 최근 데이터 갱신
-                        self.last_published_data = qr_data
-
-                    except json.JSONDecodeError:
-                        rospy.logwarn("인식된 데이터가 유효한 JSON 포맷이 아닙니다.")
+                    # 중복 방지를 위해 최근 데이터 갱신
+                    self.last_published_data = qr_data
 
                 # QR코드 목적지 텍스트를 Bounding Box 위에 오버레이
                 try:
@@ -198,14 +201,6 @@ class VisionRecognizerNode:
                 text_y = max(int(points[0].y / s) + oy - 10, 10)
                 cv2.putText(cv_image, f"Dest: {display_text}", (text_x, text_y),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-
-        # ROI 영역 표시 (주황색 박스 - QR 탐색 범위 시각화)
-        h_img, w_img = cv_image.shape[:2]
-        roi_x1, roi_y1 = int(w_img * 0.2), int(h_img * 0.2)
-        roi_x2, roi_y2 = int(w_img * 0.8), int(h_img * 0.8)
-        cv2.rectangle(cv_image, (roi_x1, roi_y1), (roi_x2, roi_y2), (0, 165, 255), 2)
-        cv2.putText(cv_image, "ROI", (roi_x1 + 4, roi_y1 + 20),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
 
         # FPS 및 거리 화면 좌측 상단 텍스트 출력
         cv2.putText(cv_image, f"FPS: {fps:.1f}", (20, 30),
