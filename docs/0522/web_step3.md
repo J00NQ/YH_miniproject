@@ -94,27 +94,7 @@ python3 ~/catkin_ws/src/qr_logistics_robot/web/app.py
 
 ---
 
-## Step 4 — Windows에서 접속
-
-Ubuntu IP 확인:
-```bash
-# Ubuntu 터미널
-hostname -I   # 예: 192.168.137.128
-```
-
-Windows 브라우저에서:
-```
-http://<Ubuntu_IP>:5000/
-```
-
-Ubuntu 방화벽 허용 필요 시:
-```bash
-sudo ufw allow 5000/tcp
-```
-
----
-
-## Step 5 — 리소스 확인 (Gazebo 동시 실행)
+## Step 4 — 리소스 확인 (Gazebo 동시 실행)
 
 Flask는 대기 상태에서 메모리 약 20~30 MB를 사용하므로 Gazebo와 병행 실행이 가능하다.  
 부담이 크다면 **Gazebo 실행 전** Flask를 먼저 종료하거나, 아래 구성으로 분리한다.
