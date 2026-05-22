@@ -27,11 +27,13 @@ def fmt2(val):
     """소수점 2자리 반올림"""
     return round(float(val), 2)
 
-# Ubuntu 실행 시: DB_PATH=~/catkin_ws/.../hospital_rooms.db python3 app.py
+# 기본 경로: web/ 폴더가 qr_logistics_robot/ 아래에 위치할 때 자동으로 ../db/ 를 가리킴
+# 예) /home/ubuntu20/catkin_ws/src/qr_logistics_robot/web/app.py
+#     → DB: /home/ubuntu20/catkin_ws/src/qr_logistics_robot/db/hospital_rooms.db
 DB_PATH = os.environ.get(
     'DB_PATH',
     os.path.abspath(os.path.join(os.path.dirname(__file__),
-                                 '../src/qr_logistics_robot/db/hospital_rooms.db'))
+                                 '../db/hospital_rooms.db'))
 )
 
 

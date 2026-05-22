@@ -16,12 +16,13 @@ Windows에서 개발한 `web/` 폴더를 Ubuntu VMware에서 실행하여,
     src/qr_logistics_robot/db/hospital_rooms.db  ← 미존재 (Ubuntu에 있음)
 
 [목표 — Ubuntu 실행]
-  ~/catkin_ws/src/qr_logistics_robot/db/hospital_rooms.db  ← 실제 DB
-  ~/mini_project/web/app.py  ← Flask 실행 (Python 3.8, DB 연결)
+  /home/ubuntu20/catkin_ws/src/qr_logistics_robot/
+    web/app.py          ← Flask 실행 (Python 3.8)
+    db/hospital_rooms.db  ← 실제 DB (ROS 노드와 공유)
 ```
 
-`app.py`는 이미 `DB_PATH` 환경변수로 DB 경로를 받도록 설계되어 있어  
-코드 수정 없이 Ubuntu에서 실행 가능하다.
+`web/app.py`의 기본 DB 경로가 `../db/hospital_rooms.db`이므로,  
+`web/`을 `qr_logistics_robot/` 아래에 두면 **환경변수 없이** 자동으로 DB를 찾는다.
 
 ---
 
@@ -36,24 +37,26 @@ pip3 --version
 
 ## Step 1 — Ubuntu에 web/ 폴더 이식
 
-### 방법 A: GitHub에서 클론 (권장)
-
-```bash
-# Ubuntu 터미널
-git clone <GitHub_URL> ~/mini_project
-```
-
-이후 로봇 코드 업데이트 시:
-```bash
-cd ~/mini_project && git pull
-```
-
-### 방법 B: scp로 직접 복사 (GitHub 없을 때)
+### 방법 A: scp로 직접 복사
 
 Windows PowerShell에서 실행:
 ```powershell
 # Ubuntu IP 먼저 확인 (Ubuntu 터미널: hostname -I)
-scp -r "C:\Users\406\project\mini_project\web" <ubuntu_user>@<Ubuntu_IP>:~/mini_project/
+scp -r "C:\Users\406\project\mini_project\web" ubuntu20@<Ubuntu_IP>:~/catkin_ws/src/qr_logistics_robot/
+```
+
+### 방법 B: GitHub에서 클론
+
+```bash
+# Ubuntu 터미널 — qr_logistics_robot/ 안에 web/ 폴더만 가져오기
+git clone <GitHub_URL> ~/mini_project_tmp
+cp -r ~/mini_project_tmp/web ~/catkin_ws/src/qr_logistics_robot/
+rm -rf ~/mini_project_tmp
+```
+
+이후 코드 업데이트 시 (방법 A 갱신):
+```powershell
+scp -r "C:\Users\406\project\mini_project\web" ubuntu20@<Ubuntu_IP>:~/catkin_ws/src/qr_logistics_robot/
 ```
 
 ---
@@ -61,7 +64,7 @@ scp -r "C:\Users\406\project\mini_project\web" <ubuntu_user>@<Ubuntu_IP>:~/mini_
 ## Step 2 — Python 의존성 설치
 
 ```bash
-cd ~/mini_project/web
+cd ~/catkin_ws/src/qr_logistics_robot/web
 pip3 install --user -r requirements.txt
 ```
 
@@ -77,13 +80,12 @@ python3 -c "import flask, qrcode; print('OK')"
 ## Step 3 — 실행
 
 ```bash
-DB_PATH=~/catkin_ws/src/qr_logistics_robot/db/hospital_rooms.db \
-  python3 ~/mini_project/web/app.py
+python3 ~/catkin_ws/src/qr_logistics_robot/web/app.py
 ```
 
 정상 기동 시 출력:
 ```
-[DB] /home/<user>/catkin_ws/src/qr_logistics_robot/db/hospital_rooms.db
+[DB] /home/ubuntu20/catkin_ws/src/qr_logistics_robot/db/hospital_rooms.db
  * Running on http://0.0.0.0:5000
 ```
 
@@ -159,8 +161,8 @@ python3 scripts/init_room_db.py
 ```bash
 # 사용 중인 프로세스 확인
 lsof -i :5000
-# 포트 변경
-python3 ~/mini_project/web/app.py  # app.py 마지막 줄 port=5001 로 수정
+# 포트 변경 시 app.py 마지막 줄 수정 후 재실행
+python3 ~/catkin_ws/src/qr_logistics_robot/web/app.py  # port=5001 로 수정
 ```
 
 ### Windows에서 접속 불가
