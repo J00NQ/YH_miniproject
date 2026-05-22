@@ -98,9 +98,34 @@ if qr_type == 'ARR':
 
 ---
 
+---
+
+## Issue 3 — 웹 대시보드 DB 동기화
+
+### 현황
+
+웹 대시보드(`web/`)는 Windows mini_project 레포에서 개발.
+SQLite DB는 Ubuntu VMware (`~/catkin_ws/.../hospital_rooms.db`)에 위치.
+
+Windows 개발 환경에서는 DB 파일이 없어 직접 실행 불가.
+Ubuntu 실행 시 `DB_PATH` 환경변수로 경로를 지정하면 정상 동작.
+
+```bash
+# Ubuntu에서 실행
+DB_PATH=~/catkin_ws/src/qr_logistics_robot/db/hospital_rooms.db python3 web/app.py
+```
+
+### 미결 사항
+
+- Windows 로컬 개발 시 DB 접근 방법 (복사본 사용 or 원격 접근)
+- 웹 수정 내용을 Ubuntu DB에 반영하는 동기화 방법 결정
+
+---
+
 ## 진행 상태
 
 | 이슈 | 상태 |
 |------|------|
 | Issue 1 — R002 QR 미인식 | 완료 (2단계 감지로 해결, 근본 원인은 2D Pose Estimate 오차) |
 | Issue 2 — 복귀 중 ARR 재인식 | 완료 (ARR 쿨다운 10초 추가) |
+| Issue 3 — 웹 대시보드 DB 동기화 | 미결 |

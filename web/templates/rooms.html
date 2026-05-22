@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block title %}병실 관리{% endblock %}
+{% block content %}
+<h1>병실 관리</h1>
+<table>
+  <tr><th>ID</th><th>이름</th><th>X</th><th>Y</th><th>θ (rad)</th><th>수정</th></tr>
+  {% for r in rooms %}
+  <tr>
+    <form method="post" action="{{ url_for('rooms_edit', room_id=r['id']) }}">
+      <td>{{ r['id'] }}</td>
+      <td><input name="name"  value="{{ r['name'] }}"  required></td>
+      <td><input name="x"     value="{{ r['x'] }}"     type="number" step="any" required></td>
+      <td><input name="y"     value="{{ r['y'] }}"     type="number" step="any" required></td>
+      <td><input name="theta" value="{{ r['theta'] }}" type="number" step="any" required></td>
+      <td><button type="submit">저장</button></td>
+    </form>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block title %}대시보드{% endblock %}
+{% block content %}
+<h1>전체 현황</h1>
+
+<section>
+  <h2>로봇 상태</h2>
+  <table>
+    <tr><th>상태</th><th>홈 X</th><th>홈 Y</th><th>홈 θ</th></tr>
+    <tr>
+      <td class="status-{{ robot['status'] }}">{{ robot['status'] }}</td>
+      <td>{{ robot['home_x'] }}</td>
+      <td>{{ robot['home_y'] }}</td>
+      <td>{{ robot['home_theta'] }}</td>
+    </tr>
+  </table>
+</section>
+
+<section>
+  <h2>주문 현황</h2>
+  <table>
+    <tr><th>#</th><th>병실</th><th>상태</th></tr>
+    {% for o in orders %}
+    <tr>
+      <td>{{ o['seq'] }}</td>
+      <td>{{ o['name'] }} ({{ o['room_id'] }})</td>
+      <td class="status-{{ o['status'] }}">{{ o['status'] }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+
+<section>
+  <h2>병실 정보</h2>
+  <table>
+    <tr><th>ID</th><th>이름</th><th>X</th><th>Y</th><th>θ</th></tr>
+    {% for r in rooms %}
+    <tr>
+      <td>{{ r['id'] }}</td>
+      <td>{{ r['name'] }}</td>
+      <td>{{ r['x'] }}</td>
+      <td>{{ r['y'] }}</td>
+      <td>{{ r['theta'] }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+{% endblock %}
