@@ -9,9 +9,11 @@
     <tr><th>상태</th><th>홈 X</th><th>홈 Y</th><th>홈 θ</th></tr>
     <tr>
       <td class="status-{{ robot['status'] }}">{{ robot['status'] }}</td>
-      <td>{{ robot['home_x'] }}</td>
-      <td>{{ robot['home_y'] }}</td>
-      <td>{{ robot['home_theta'] }}</td>
+      <td>{{ robot['home_x'] | f2 }}</td>
+      <td>{{ robot['home_y'] | f2 }}</td>
+      <td>{{ robot['home_theta'] | f2 }} rad
+          <span class="deg-label">({{ robot['home_theta'] | deg }}°)</span>
+      </td>
     </tr>
   </table>
 </section>
@@ -38,9 +40,11 @@
     <tr>
       <td>{{ r['id'] }}</td>
       <td>{{ r['name'] }}</td>
-      <td>{{ r['x'] }}</td>
-      <td>{{ r['y'] }}</td>
-      <td>{{ r['theta'] }}</td>
+      <td>{{ r['x'] | f2 }}</td>
+      <td>{{ r['y'] | f2 }}</td>
+      <td>{{ r['theta'] | f2 }} rad
+          <span class="deg-label">({{ r['theta'] | deg }}°)</span>
+      </td>
     </tr>
     {% endfor %}
   </table>

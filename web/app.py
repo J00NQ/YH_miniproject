@@ -6,11 +6,24 @@ DB_PATH 환경변수로 SQLite 경로 지정 (미설정 시 개발용 기본 경
 """
 
 import os
+import math
 import sqlite3
 from flask import Flask, render_template, request, redirect, url_for, flash
 
 app = Flask(__name__)
 app.secret_key = 'qr-logistics-dev-key'
+
+
+@app.template_filter('deg')
+def to_degrees(rad):
+    """라디안 → 도(°) 변환, 소수점 2자리"""
+    return round(math.degrees(float(rad)), 2)
+
+
+@app.template_filter('f2')
+def fmt2(val):
+    """소수점 2자리 반올림"""
+    return round(float(val), 2)
 
 # Ubuntu 실행 시: DB_PATH=~/catkin_ws/.../hospital_rooms.db python3 app.py
 DB_PATH = os.environ.get(
