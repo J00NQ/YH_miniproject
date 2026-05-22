@@ -80,20 +80,18 @@ qw = cr*cp*cy + sr*sp*sy
 `path_planner_node`는 `current_order_seq is None`일 때 경고 후 무시하므로
 **현재는 기능 이상 없음.** 하지만 불필요한 토픽 발행이 계속되는 구조적 문제.
 
-### 해결 방향
+### 해결
 
-`vision_recognizer_node`에 ARR 발행 후 **쿨다운(cooldown)** 추가.
-ARR을 한 번 publish한 뒤 일정 시간(예: 10초) 동안 같은 ARR을 다시 발행하지 않도록.
+`vision_recognizer_node`에 ARR 발행 후 **10초 쿨다운** 추가.
 
 ```python
-# 추가할 상태 변수 (__init__)
+# __init__
 self.last_arr_time = 0.0
-ARR_COOLDOWN = 10.0  # 초
+self.ARR_COOLDOWN = 10.0
 
-# 발행 조건에 쿨다운 체크 추가
+# image_callback 발행 조건
 if qr_type == 'ARR':
-    now = time.time()
-    if now - self.last_arr_time < ARR_COOLDOWN:
+    if now - self.last_arr_time < self.ARR_COOLDOWN:
         continue   # 쿨다운 중 → 발행 생략
     self.last_arr_time = now
 ```
@@ -104,5 +102,5 @@ if qr_type == 'ARR':
 
 | 이슈 | 상태 |
 |------|------|
-| Issue 1 — R002 QR 미인식 | 조사 중 |
-| Issue 2 — 복귀 중 ARR 재인식 | 조사 중 |
+| Issue 1 — R002 QR 미인식 | 완료 (2단계 감지로 해결, 근본 원인은 2D Pose Estimate 오차) |
+| Issue 2 — 복귀 중 ARR 재인식 | 완료 (ARR 쿨다운 10초 추가) |

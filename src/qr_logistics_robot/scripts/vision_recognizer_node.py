@@ -32,6 +32,8 @@ class VisionRecognizerNode:
         
         # 상태 변수
         self.last_published_data = None
+        self.last_arr_time = 0.0          # ARR 마지막 발행 시각
+        self.ARR_COOLDOWN = 10.0          # ARR 중복 발행 억제 시간 (초)
         self.last_time = time.time()
         self.path_distance = 0.0
         self.camera_matrix = None
@@ -169,12 +171,19 @@ class VisionRecognizerNode:
                     rospy.logwarn("인식된 데이터가 유효한 JSON 포맷이 아닙니다.")
                     qr_type = None
 
-                # ARR은 path_planner가 중복을 처리하므로 항상 발행
-                if qr_type is not None and (qr_data != self.last_published_data or qr_type == 'ARR'):
+                # ARR: 쿨다운 내 재인식 억제 (복귀 중 QR 앞 통과 시 중복 발행 방지)
+                # 그 외 타입: last_published_data가 다를 때만 발행
+                if qr_type is not None:
+                    now = time.time()
                     if qr_type == 'ARR':
+                        if now - self.last_arr_time < self.ARR_COOLDOWN:
+                            continue
                         rospy.loginfo(f"=====================================================")
                         rospy.loginfo(f"[도착 확인 QR 감지!] 수령 확인 처리 중...")
                         rospy.loginfo(f"=====================================================")
+                        self.last_arr_time = now
+                    elif qr_data == self.last_published_data:
+                        continue
                     else:
                         rospy.loginfo(f"[QR 감지] type={qr_type}")
 
